@@ -23,12 +23,17 @@ class Box extends OAuth2
      * @var array
      */
     protected $user = [];
+    
+    /**
+     * @var array
+     */
+    protected $tokens = [];
 
     /**
      * @var array
      */
     protected $scopes = [
-        'manage_app_users',    
+        'manage_app_users',
     ];
 
     /**
@@ -45,10 +50,10 @@ class Box extends OAuth2
     public function getLoginURL(): string
     {
         $url = $this->endpoint . 'authorize?'.
-            \http_build_query([                
+            \http_build_query([
                 'response_type' => 'code',
                 'client_id' => $this->appID,
-                'scope' => \implode(',', $this->getScopes()),                
+                'scope' => \implode(',', $this->getScopes()),
                 'redirect_uri' => $this->callback,
                 'state' => \json_encode($this->state),
             ]);
@@ -59,32 +64,55 @@ class Box extends OAuth2
     /**
      * @param string $code
      *
-     * @return string
+     * @return array
      */
-    public function getAccessToken(string $code): string
+    protected function getTokens(string $code): array
     {
-        $header = "Content-Type: application/x-www-form-urlencoded";
-        $accessToken = $this->request(
+        if(empty($this->tokens)) {
+            $headers = ['Content-Type: application/x-www-form-urlencoded'];
+            $this->tokens = \json_decode($this->request(
+                'POST',
+                $this->endpoint . 'token',
+                $headers,
+                \http_build_query([
+                    "client_id" => $this->appID,
+                    "client_secret" => $this->appSecret,
+                    "code" => $code,
+                    "grant_type" => "authorization_code",
+                    "scope" => \implode(',', $this->getScopes()),
+                    "redirect_uri" => $this->callback
+                ])
+            ), true);
+        }
+
+        return $this->tokens;
+    }
+
+    /**
+     * @param string $refreshToken
+     *
+     * @return array
+     */
+    public function refreshTokens(string $refreshToken):array
+    {
+        $headers = ['Content-Type: application/x-www-form-urlencoded'];
+        $this->tokens = \json_decode($this->request(
             'POST',
             $this->endpoint . 'token',
-            [$header],
+            $headers,
             \http_build_query([
                 "client_id" => $this->appID,
                 "client_secret" => $this->appSecret,
-                "code" => $code,
-                "grant_type" => "authorization_code",
-                "scope" =>  \implode(',', $this->getScopes()),
-                "redirect_uri" => $this->callback
+                "refresh_token" => $refreshToken,
+                "grant_type" => "refresh_token",
             ])
-        );
+        ), true);
 
-        $accessToken = \json_decode($accessToken, true);
-
-        if (array_key_exists('access_token', $accessToken)) {
-            return $accessToken['access_token'];
+        if(empty($this->tokens['refresh_token'])) {
+            $this->tokens['refresh_token'] = $refreshToken;
         }
 
-        return '';
+        return $this->tokens;
     }
 
     /**
